@@ -1,48 +1,42 @@
-# Prisma + MongoDB + Next.js Setup Guide (2026)
+# Prisma v6 + MongoDB + Next.js Setup Guide
 
-> **Last updated:** April 2026 | Prisma v6.19.x | Next.js 15+
+A step-by-step guide to integrating **Prisma ORM v6**, **MongoDB Atlas**, and **Next.js App Router** with TypeScript.
 
----
+## Tech Stack
 
-## ⚠️ Critical Version Notice
+- Next.js 15+
+- TypeScript
+- Prisma ORM 6.19.3
+- Prisma Client 6.19.3
+- MongoDB Atlas
 
-| Package | Version to Use | Reason |
-|---|---|---|
-| `prisma` | `@6` (v6.19.x) | Prisma v7 does NOT support MongoDB yet |
-| `@prisma/client` | `@6` (v6.19.x) | Must match prisma version |
-| `next` | `15+` | App Router recommended |
-
-> Prisma v7 dropped MongoDB support. MongoDB support is planned for a future v7 release. **Always pin to v6 until officially announced.**
+> **Important:** This guide uses Prisma v6.19.3. Keep `prisma` and `@prisma/client` on the same version. This setup uses the `prisma-client-js` generator and the default generated client location.
 
 ---
 
-## Prerequisites
-
-- Node.js 18+
-- A [MongoDB Atlas](https://www.mongodb.com/atlas) account (free tier works) — must be a **replica set** (Atlas is by default)
-- A Next.js project
-
----
-
-## 1. Create Next.js App
+## 1. Create Next.js Project
 
 ```bash
 npx create-next-app@latest my-app --typescript --tailwind --app
+
 cd my-app
 ```
-
----
 
 ## 2. Install Prisma v6
 
 ```bash
-npm install -D prisma@6 dotenv
-npm install @prisma/client@6
+npm install -D prisma@6.19.3 dotenv
+
+npm install @prisma/client@6.19.3
 ```
 
-> `dotenv` is needed as a dev dependency so the **Prisma CLI** can read your `.env` file. Next.js handles env loading natively at runtime — no extra package needed there.
+### Package Responsibilities
 
----
+| Package | Purpose |
+|---|---|
+| `prisma` | Prisma CLI and schema management |
+| `@prisma/client` | Database queries and CRUD operations |
+| `dotenv` | Loads environment variables for Prisma CLI |
 
 ## 3. Initialize Prisma
 
@@ -51,46 +45,46 @@ npx prisma init --datasource-provider mongodb
 ```
 
 This creates:
-```
+
+```text
 prisma/
-  schema.prisma
-prisma.config.ts
+└── schema.prisma
+
 .env
 ```
 
----
+For this Prisma v6 setup, you do not need `prisma.config.ts`. The database URL will remain inside `schema.prisma`.
 
-## 4. Configure `prisma.config.ts`
+## 4. Configure MongoDB Atlas
 
-In Prisma v6, the `datasource url` must stay in `schema.prisma`. Keep `prisma.config.ts` simple:
+1. Create a free MongoDB Atlas account.
+2. Create a cluster.
+3. Go to Database Access and create a database user.
+4. Configure Network Access and allow your IP address.
+5. Select Connect → Drivers → Node.js.
+6. Copy your MongoDB connection string.
 
-```ts
-// prisma.config.ts
-import "dotenv/config";
-import { defineConfig } from "prisma/config";
+### Configure `.env`
 
-export default defineConfig({
- schema: "prisma/schema.prisma",
-  migrations: {
-    path: "prisma/migrations",
-  },
-  engine: "classic",
-  datasource: {
-    url: env("DATABASE_URL"),
-  },
-});
+```env
+DATABASE_URL="mongodb+srv://USERNAME:PASSWORD@mycluster.mongodb.net/my-database?retryWrites=true&w=majority"
 ```
 
-> **Do NOT add a `datasource` block here in v6.** Moving the URL to `prisma.config.ts` is a v7-only feature. Doing it in v6 will break `prisma generate`.
+Replace:
 
----
+- `USERNAME` with your MongoDB username.
+- `PASSWORD` with your MongoDB password.
+- `my-database` with your database name.
 
-## 5. Configure `prisma/schema.prisma`
+> Never commit `.env` to GitHub. Add it to `.gitignore`.
+
+## 5. Configure Prisma Schema
+
+File: `prisma/schema.prisma`
 
 ```prisma
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
 }
 
 datasource db {
@@ -99,65 +93,102 @@ datasource db {
 }
 
 model User {
-  id    String @id @default(auto()) @map("_id") @db.ObjectId
-  name  String
-  email String @unique
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
 }
 ```
 
-### Key MongoDB Schema Rules
+### MongoDB Schema Rules
 
-- `id` must be `String` type (not `Int`)
-- Always add `@id @default(auto()) @map("_id") @db.ObjectId`
-- Relations use `String @db.ObjectId` for foreign keys
-- No `autoincrement()` — MongoDB doesn't support it
+**ObjectId**
 
----
-
-## 6. Set Up `.env`
-
-```env
-DATABASE_URL="mongodb+srv://username:password@mycluster.fceee79.mongodb.net/db-name"
+```prisma
+id String @id @default(auto()) @map("_id") @db.ObjectId
 ```
 
-Get your connection string from **MongoDB Atlas → Connect → Drivers**.
+- `String`: Prisma field type.
+- `@id`: Primary key.
+- `@default(auto())`: Automatically generates ObjectId.
+- `@map("_id")`: Maps the field to MongoDB's `_id`.
+- `@db.ObjectId`: Uses MongoDB ObjectId.
 
-> Add `.env` to `.gitignore` — never commit secrets.
+**Unique Field**
 
----
+```prisma
+email String @unique
+```
 
-## 7. Push Schema to MongoDB
+Ensures that each email address is unique.
+
+**Optional Field**
+
+```prisma
+phone String?
+```
+
+The `?` makes the field optional.
+
+**Default Value**
+
+```prisma
+createdAt DateTime @default(now())
+```
+
+Automatically sets the creation timestamp.
+
+## 6. Push Schema to MongoDB
 
 ```bash
 npx prisma db push
 ```
 
-> ❌ **Never** run `npx prisma migrate dev` with MongoDB — it will fail. MongoDB does not support Prisma Migrate. Always use `db push`.
-
 This command:
-- Creates collections in MongoDB
-- Sets up indexes for unique fields and relations
-- Does NOT create migration files
 
----
+- Synchronizes the Prisma schema with MongoDB.
+- Creates collections when necessary.
+- Creates indexes for supported unique constraints.
+- Updates the database structure.
 
-## 8. Generate Prisma Client
+> **Important:** Prisma Migrate is not supported for MongoDB. Use `db push` instead of `migrate dev`.
+
+```bash
+# Do not use with MongoDB
+npx prisma migrate dev
+
+# Use this instead
+npx prisma db push
+```
+
+## 7. Generate Prisma Client
 
 ```bash
 npx prisma generate
 ```
 
-The client gets generated at `app/generated/prisma` (as set in `output`).
+With the `prisma-client-js` generator and no custom output, Prisma Client is generated in:
 
----
+```text
+node_modules/
+└── .prisma/
+    └── client/
+```
 
-## 9. Create the Prisma Singleton
-
-Create `lib/prisma.ts` in your project root:
+Import Prisma Client using:
 
 ```ts
-// lib/prisma.ts
-import { PrismaClient } from "../app/generated/prisma";
+import { PrismaClient } from "@prisma/client";
+```
+
+Run `npx prisma generate` again whenever you change your Prisma schema.
+
+## 8. Create Prisma Singleton
+
+Create `lib/prisma.ts` in the project root.
+
+```ts
+import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -173,81 +204,118 @@ if (process.env.NODE_ENV !== "production") {
 export default prisma;
 ```
 
-### Why the singleton pattern?
+### Why Singleton Pattern?
 
-Next.js hot-reloads files in development. Without this, every file save creates a **new** `PrismaClient` with its own connection pool — you'll quickly hit MongoDB's connection limit. Storing the instance on `globalThis` ensures it's reused across hot reloads.
+Next.js uses Hot Reload during development.
 
----
+Without a singleton, repeated reloads can create unnecessary PrismaClient instances and database connections.
 
-## 10. Use Prisma in Your App
+The singleton stores the PrismaClient instance on `globalThis` and reuses it across development reloads.
 
-### Server Component
+In production, the module-level instance is reused through the module cache.
+
+## 9. Use Prisma in Next.js
+
+### A. Server Component
+
+File: `app/users/page.tsx`
 
 ```tsx
-// app/users/page.tsx
 import prisma from "@/lib/prisma";
 
 export default async function UsersPage() {
   const users = await prisma.user.findMany();
 
   return (
-    <ul>
+    <div>
+      <h1>Users</h1>
+
       {users.map((user) => (
-        <li key={user.id}>{user.name} — {user.email}</li>
+        <div key={user.id}>
+          <h2>{user.name}</h2>
+          <p>{user.email}</p>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
 ```
 
-### API Route
+> Prisma Client should only be used on the server, not directly inside Client Components.
+
+### B. API Route Handler
+
+File: `app/api/users/route.ts`
 
 ```ts
-// app/api/users/route.ts
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   const users = await prisma.user.findMany();
+
   return NextResponse.json(users);
 }
 
 export async function POST(req: Request) {
   const { name, email } = await req.json();
+
   const user = await prisma.user.create({
-    data: { name, email },
+    data: {
+      name,
+      email,
+    },
   });
-  return NextResponse.json(user, { status: 201 });
+
+  return NextResponse.json(user, {
+    status: 201,
+  });
 }
 ```
 
-### Server Action
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/users` | Get all users |
+| POST | `/api/users` | Create a new user |
+
+For production APIs, add request validation, authentication, authorization, and error handling.
+
+### C. Server Actions
+
+File: `app/actions/userActions.ts`
 
 ```ts
-// app/actions/userActions.ts
 "use server";
+
 import prisma from "@/lib/prisma";
 
 export async function createUser(name: string, email: string) {
-  const user = await prisma.user.create({
-    data: { name, email },
+  return prisma.user.create({
+    data: {
+      name,
+      email,
+    },
   });
-  return user;
 }
 
 export async function deleteUser(id: string) {
-  await prisma.user.delete({ where: { id } });
+  await prisma.user.delete({
+    where: { id },
+  });
 }
 ```
 
----
+Server Actions allow server-side database operations to be called through Next.js actions. Add appropriate authorization and input validation before using them in production.
 
-## 11. Example: Full Schema with Relations
+## 10. MongoDB Relations
+
+Example: One User can have multiple Posts.
+
+Update `prisma/schema.prisma`:
 
 ```prisma
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
 }
 
 datasource db {
@@ -260,6 +328,7 @@ model User {
   name      String
   email     String   @unique
   createdAt DateTime @default(now())
+
   posts     Post[]
 }
 
@@ -269,100 +338,122 @@ model Post {
   content   String?
   published Boolean  @default(false)
   createdAt DateTime @default(now())
+
   author    User     @relation(fields: [authorId], references: [id])
   authorId  String   @db.ObjectId
 }
 ```
 
-After any schema change, always run:
+### Understanding the Relation
+
+```prisma
+posts Post[]
+```
+
+A User can have multiple Posts.
+
+```prisma
+authorId String @db.ObjectId
+```
+
+Stores the referenced User ObjectId in the Post document.
+
+```prisma
+author User @relation(fields: [authorId], references: [id])
+```
+
+Defines the relationship between Post and User.
+
+> MongoDB relations use document references. They are not the same as SQL foreign key constraints.
+
+After changing the schema:
 
 ```bash
 npx prisma db push
 npx prisma generate
 ```
 
----
+## 11. Common MongoDB + Prisma Gotchas
 
-## Common MongoDB + Prisma Gotchas
+| Topic | Important Note |
+|---|---|
+| Prisma Migrate | Not supported with MongoDB |
+| `db push` | Use to synchronize schema |
+| ObjectId | Use `String` with `@db.ObjectId` |
+| `autoincrement()` | Not supported |
+| Transactions | Require a replica set |
+| Prisma Studio | MongoDB is not supported by Prisma Studio in this setup |
 
-### ❌ `prisma migrate` is not supported
-```bash
-# This will FAIL with MongoDB
-npx prisma migrate dev
+### Recommended Database Tools
 
-# Always use this instead
-npx prisma db push
-```
+- MongoDB Compass
+- MongoDB Atlas Dashboard
 
-### ❌ Prisma Studio doesn't work with MongoDB
-```bash
-# This won't work for MongoDB (as of 2026)
-npx prisma studio
-# Use MongoDB Atlas UI or MongoDB Compass instead
-```
+## 12. Project Structure
 
-### ⚠️ Transactions require a replica set
-`prisma.$transaction()` will fail on a standalone `mongod` instance. MongoDB Atlas is a replica set by default and works fine.
-
-### ⚠️ Editor type error about `url` in schema
-If your editor shows: *"The datasource property url is no longer supported in schema files"* — this is a **false alarm** from the VS Code Prisma extension applying v7 rules to a v6 project. The CLI (v6.19.x) works correctly and `url` must stay in `schema.prisma`.
-
-### ⚠️ Don't add `datasource` block to `prisma.config.ts` in v6
-Doing so will break `prisma generate` with error `P1012: Argument "url" is missing`. This is a v7-only feature.
-
----
-
-## Project Structure
-
-```
+```text
 my-app/
+│
 ├── app/
 │   ├── api/
 │   │   └── users/
 │   │       └── route.ts
-│   ├── generated/
-│   │   └── prisma/          ← auto-generated, don't edit
+│   │
+│   ├── actions/
+│   │   └── userActions.ts
+│   │
+│   ├── users/
+│   │   └── page.tsx
+│   │
+│   ├── layout.tsx
 │   └── page.tsx
+│
 ├── lib/
-│   └── prisma.ts            ← singleton client
+│   └── prisma.ts
+│
 ├── prisma/
-│   └── schema.prisma        ← your data models
-├── prisma.config.ts         ← Prisma CLI config
-├── .env                     ← DATABASE_URL (never commit)
-└── package.json
+│   └── schema.prisma
+│
+├── .env
+├── .gitignore
+├── next.config.ts
+├── package.json
+└── tsconfig.json
 ```
 
----
-
-## Quick Reference — Commands
+## 13. Quick Reference — Commands
 
 | Command | Purpose |
 |---|---|
-| `npx prisma init` | Initialize Prisma in project |
-| `npx prisma db push` | Sync schema to MongoDB (use instead of migrate) |
-| `npx prisma generate` | Regenerate Prisma Client after schema changes |
-| `npx prisma db pull` | Introspect existing MongoDB into schema |
-| `npx prisma --version` | Check installed Prisma version |
+| `npx prisma init --datasource-provider mongodb` | Initialize Prisma |
+| `npx prisma db push` | Synchronize schema |
+| `npx prisma generate` | Generate Prisma Client |
+| `npx prisma db pull` | Introspect existing database |
+| `npx prisma --version` | Check Prisma version |
+
+## 14. Final Setup Checklist
+
+- [ ] Create Next.js project.
+- [ ] Install Prisma v6.19.3.
+- [ ] Create MongoDB Atlas cluster.
+- [ ] Configure `DATABASE_URL` in `.env`.
+- [ ] Configure `prisma/schema.prisma`.
+- [ ] Run `npx prisma db push`.
+- [ ] Run `npx prisma generate`.
+- [ ] Create `lib/prisma.ts`.
+- [ ] Test GET `/api/users`.
+- [ ] Test POST `/api/users`.
 
 ---
 
-## What Changes When Prisma v7 Adds MongoDB
+## Official Documentation
 
-When Prisma v7 eventually supports MongoDB, these things will change:
-
-1. `provider` in generator changes from `"prisma-client-js"` → `"prisma-client"`
-2. `url` moves from `schema.prisma` → `prisma.config.ts`
-3. `PrismaClient` constructor will require a driver adapter
-4. Package ships as ESM — `tsconfig.json` needs `"module": "ESNext"`
-
-Until then, **stay on v6**.
-
----
-
-## Resources
-
-- [Prisma MongoDB Quickstart](https://www.prisma.io/docs/getting-started/setup-prisma/start-from-scratch/mongodb-typescript-mongodb)
-- [Prisma v6 → v7 Upgrade Guide](https://www.prisma.io/docs/orm/more/upgrade-guides/upgrading-versions/upgrading-to-prisma-7)
+- [Prisma MongoDB Documentation](https://www.prisma.io/docs/orm/overview/databases/mongodb)
+- [Prisma Client Generation](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/generating-prisma-client)
+- [Prisma v6 Documentation](https://www.prisma.io/docs/orm/v6)
 - [MongoDB Atlas](https://www.mongodb.com/atlas)
-- [Prisma Config Reference](https://www.prisma.io/docs/orm/reference/prisma-config-reference)
-- [prisma/prisma GitHub](https://github.com/prisma/prisma)
+- [MongoDB Documentation](https://www.mongodb.com/docs/)
+
+---
+
+**Note:** This guide intentionally uses Prisma v6 with `prisma-client-js`, the default generated client location, and `@prisma/client` imports. It does not use Prisma v7 configuration or driver adapters.
